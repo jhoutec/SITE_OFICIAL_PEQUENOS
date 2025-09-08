@@ -55,10 +55,22 @@ function showNotification(message,type='success'){
   n.classList.add('show'); setTimeout(()=>n.classList.remove('show'), type==='info'?5000:3000);
 }
 function escapeHtml(str){
-  return (str||'').replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;","~":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+  return (str||'').replace(/[&<>"']/g, m =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m])
+  );
 }
+
 const phoneRe = /^\+?\d{10,14}$/;
 const onlyDigits = s => (s||'').replace(/\D+/g,'');
+
+function formatBRPhone(v){
+  let d = onlyDigits(v||'');
+  if (d.startsWith('55')) d = d.slice(2);
+  if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+  return v||'';
+}
+
 
 // ===== MÁSCARA DE TELEFONE (BR) + UI DO BOTÃO =====
 function formatPhoneBRDisplay(v) {
@@ -692,6 +704,49 @@ function setupCheckoutModal(){
 }
 
 // ===== PEDIDOS =====
+
+async function whatsappCustomer(orderId){
+  try{
+    const o = await apiFetch(`/orders/${orderId}`, { method:'GET' });
+
+    // telefone do cliente
+    let phoneDigits = onlyDigits(o.customer_phone || '');
+    if (!phoneDigits){
+      return showNotification('❌ Pedido sem telefone do cliente.', 'error');
+    }
+    if (!phoneDigits.startsWith('55')) phoneDigits = '55' + phoneDigits;
+
+    // itens
+    const lines = (o.items || []).map((i, idx) => {
+      const pname = products.find(p => String(p.id) === String(i.product_id))?.name || '';
+      const sub = ((i.price_cents||0)/100) * (i.qty||0);
+      return `${idx+1}) ${pname} • Tam ${i.size||'-'} • Qtd ${i.qty} • ${brl(sub)}`;
+    });
+
+    const firstName = (o.customer_name||'').trim().split(' ')[0] || 'Olá';
+    const dt = new Date(o.created_at).toLocaleString('pt-BR');
+    const total = brl((o.total_cents||0)/100);
+
+    const msg =
+`${firstName}, tudo bem? Aqui é da *Pequenos Passos* 👟
+
+Sobre o seu pedido *#${o.id}* (${dt}):
+
+${lines.join('\n')}
+
+*Total:* ${total}
+*Status:* ${o.status||'-'}
+
+Podemos combinar a entrega?`;
+
+    const encoded = encodeURIComponent(msg);
+    window.open(`https://wa.me/${phoneDigits}?text=${encoded}`, '_blank');
+  }catch(e){
+    console.error(e);
+    showNotification('❌ Não foi possível abrir WhatsApp do cliente.', 'error');
+  }
+}
+
 async function finalizeOrder() {
   if (cart.length === 0) return showNotification('🛒 Carrinho vazio!', 'error');
 
@@ -756,6 +811,7 @@ async function returnOrderToStock(orderId){
 }
 
 // Lista pedidos por status e busca itens de cada pedido
+// ===== PEDIDOS =====
 async function renderOrders(tab = 'PENDING') {
   const list = byId('orders-list');
 
@@ -778,7 +834,8 @@ async function renderOrders(tab = 'PENDING') {
 
   try {
     const rows = await apiFetch(`/orders?limit=50&page=1`, { method: 'GET' });
-    const base = (Array.isArray(rows) ? rows : []).filter(o => (o.status || 'PENDING') === wanted);
+    const base = (Array.isArray(rows) ? rows : [])
+      .filter(o => (o.status || 'PENDING') === wanted);
 
     // busca itens de cada pedido (detalhe)
     const detailed = await Promise.all(base.map(async (o) => {
@@ -799,29 +856,42 @@ async function renderOrders(tab = 'PENDING') {
 
     list.innerHTML = detailed.map(o => {
       const when = new Date(o.created_at).toLocaleString('pt-BR');
+
       const itemsHtml = (o.items || []).map((it, idx) => {
         const pname = products.find(p => String(p.id) === String(it.product_id))?.name || '';
         return `${idx + 1}) ${escapeHtml(pname)} • Tam ${it.size || '-'} • Qtd ${it.qty} • ${brl((it.price_cents || 0)/100)}`;
       }).join('<br>');
 
+      // botões por status (mantém sua lógica)
       const actions =
         o.status === 'PENDING'
           ? `<button class="btn btn-approve" onclick="approveOrder('${o.id}')"><i class="fas fa-check"></i> Aprovar</button>
-             <button class="btn btn-cancel" onclick="cancelOrder('${o.id}')"><i class="fas fa-times"></i> Cancelar</button>`
+             <button class="btn btn-cancel"  onclick="cancelOrder('${o.id}')"><i class="fas fa-times"></i> Cancelar</button>`
           : (o.status === 'APPROVED'
               ? `<button class="btn btn-cancel" onclick="returnOrderToStock('${o.id}')"><i class="fas fa-undo"></i> Devolver ao estoque</button>`
               : `<button class="btn btn-cancel" onclick="deleteOrderLocal('${o.id}')"><i class="fas fa-trash"></i> Remover (local)</button>`);
 
+      // 👇 AQUI entram o nome/telefone do cliente e o botão do WhatsApp do CLIENTE
       return `<div class="order-card" data-oid="${o.id}">
         <div class="order-header">
           <strong>Pedido #${o.id}</strong>
           <span style="color:#666"><i class="fas fa-clock"></i> ${when}</span>
         </div>
+
+        <div style="margin:6px 0 10px;color:#444">
+          <i class="fas fa-user"></i>
+          <strong>${escapeHtml(o.customer_name || 'Cliente')}</strong>
+          ${o.customer_phone ? `<span style="color:#777"> • ${formatBRPhone(o.customer_phone)}</span>` : ''}
+        </div>
+
         <div class="order-items">${itemsHtml || ''}</div>
         <div style="font-weight:900">Total: ${brl((o.total_cents || 0)/100)}</div>
+
         <div class="order-actions">
           ${actions}
-          <button class="btn btn-whats" onclick="whatsappOrderBackend('${o.id}')"><i class="fab fa-whatsapp"></i> WhatsApp</button>
+          <button class="btn btn-whats" onclick="whatsappCustomer('${o.id}')">
+            <i class="fab fa-whatsapp"></i> WhatsApp
+          </button>
         </div>
       </div>`;
     }).join('');
@@ -832,6 +902,7 @@ async function renderOrders(tab = 'PENDING') {
     </div>`;
   }
 }
+
 
 async function approveOrder(orderId) {
   if (!getToken()) return showNotification('❌ Precisa estar logado', 'error');
