@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pequenos Passos - Tênis Infantil</title>
+
+  <!-- Libs externas -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka+One:wght@400&family=Nunito:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Seu CSS -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <nav class="container">
+      <div class="logo">Pequenos Passos</div>
+      <div class="search-bar">
+        <input type="search" id="search-input" placeholder="Buscar produtos..." oninput="filterProducts()">
+        <button type="button" onclick="filterProducts()"><i class="fas fa-search"></i></button>
+      </div>
+      <div class="nav-links">
+        <a href="#" onclick="showHome()"><i class="fas fa-home"></i> Home</a>
+        <a href="#" onclick="showProducts()"><i class="fas fa-shoe-prints"></i> Produtos</a>
+        <a href="#" onclick="showCart()"><i class="fas fa-shopping-cart"></i> Carrinho <span id="cart-count" class="cart-badge">0</span></a>
+        <a href="#" onclick="showContact()"><i class="fas fa-phone"></i> Contato</a>
+        <a href="#" class="admin-btn" onclick="showAdmin()"><i class="fas fa-cog"></i> Admin</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div id="home-section" class="hero">
+      <h1>Pequenos Passos</h1>
+      <p>Os melhores tênis para os primeiros passos dos seus pequenos! 👶✨</p>
+    </div>
+
+    <div id="filters-section" class="filters" style="display:none">
+      <div class="filter-group">
+        <label><i class="fas fa-list"></i> Categoria</label>
+        <select id="category-filter" onchange="filterProducts()">
+          <option value="">Todas as categorias</option>
+          <option value="tenis-masculino-infantil">Tênis Masculino Infantil</option>
+          <option value="tenis-feminino-infantil">Tênis Feminino Infantil</option>
+          <option value="sandalia-masculina-infantil">Sandália Masculina Infantil</option>
+          <option value="sandalia-feminina-infantil">Sandália Feminina Infantil</option>
+          <option value="bota-masculina-infantil">Bota Masculina Infantil</option>
+          <option value="bota-feminina-infantil">Bota Feminina Infantil</option>
+          <option value="acessorios">Acessórios</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label><i class="fas fa-ruler"></i> Tamanho</label>
+        <select id="size-filter" onchange="filterProducts()">
+          <option value="">Todos os tamanhos</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label><i class="fas fa-dollar-sign"></i> Preço</label>
+        <select id="price-filter" onchange="filterProducts()">
+          <option value="">Todos os preços</option>
+          <option value="0-50">Até R$ 50</option>
+          <option value="50-100">R$ 50 - R$ 100</option>
+          <option value="100-150">R$ 100 - R$ 150</option>
+          <option value="150+">Acima de R$ 150</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label><i class="fas fa-sort-amount-down"></i> Ordenar por</label>
+        <select id="sort-filter" onchange="filterProducts()">
+          <option value="relevance">Relevância</option>
+          <option value="price-asc">Preço: Menor ao Maior</option>
+          <option value="price-desc">Preço: Maior ao Menor</option>
+        </select>
+      </div>
+    </div>
+
+    <section id="products-section" class="products-section">
+      <h2 class="section-title">Nossos Produtos</h2>
+      <div class="products-grid" id="products-grid"></div>
+    </section>
+
+    <!-- Login fica oculto até o JS decidir mostrar -->
+    <section id="login-section" class="login-section" style="display:none">
+      <div class="login-title">Acesso Administrativo</div>
+      <form class="login-form" id="login-form">
+        <input type="text" id="username" class="login-input" placeholder="👤 Usuário" required>
+        <input type="password" id="password" class="login-input" placeholder="🔑 Senha" required>
+        <button type="submit" class="login-btn"><i class="fas fa-sign-in-alt"></i> Entrar</button>
+        <div id="login-error" class="error-message"></div>
+      </form>
+      <div class="admin-info" style="margin-top:14px">
+        <strong>📝 Credenciais de teste:</strong> Usuário: <code>admin</code> • Senha: <code>pequenospassos123</code>
+      </div>
+    </section>
+
+    <!-- Admin também inicia oculto -->
+    <section id="admin-section" class="admin-section" style="display:none">
+      <div class="admin-header">
+        <h2 class="section-title" style="margin:0"><i class="fas fa-tools"></i> Painel Administrativo</h2>
+        <button class="logout-btn" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Sair</button>
+      </div>
+      
+      <div id="admin-dashboard" class="admin-dashboard"></div>
+      
+      <div class="admin-tabs">
+        <button class="admin-tab-btn active" onclick="showAdminTab('products')"><i class="fas fa-box-open"></i> Gerenciar Produtos</button>
+        <button class="admin-tab-btn" onclick="showAdminTab('orders')"><i class="fas fa-receipt"></i> Pedidos</button>
+        <button class="admin-tab-btn" onclick="showAdminTab('stock')"><i class="fas fa-exclamation-triangle"></i> Estoque Baixo</button>
+      </div>
+
+      <div id="admin-tab-content">
+        <div id="admin-products-tab">
+          <div class="admin-info">
+            <strong><i class="fas fa-user-check"></i> Bem-vindo ao painel administrativo!</strong>
+            <div>Usuário logado: <span id="logged-user"></span> | Login: <span id="login-time"></span></div>
+          </div>
+          <div class="admin-tools" style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0">
+            <button type="button" class="btn" style="background:linear-gradient(45deg,#8b5cf6,#06b6d4)" onclick="exportCatalog()"><i class="fas fa-file-export"></i> Exportar catálogo (JSON)</button>
+            <button type="button" class="btn" style="background:linear-gradient(45deg,#f59e0b,#ef4444)" onclick="reloadCatalog()"><i class="fas fa-rotate"></i> Recarregar products.json</button>
+          </div>
+          <form class="admin-form" id="product-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="product-name"><i class="fas fa-tag"></i> Nome do Produto</label>
+                <input type="text" id="product-name" required>
+              </div>
+              <div class="form-group">
+                <label for="product-price"><i class="fas fa-dollar-sign"></i> Preço (R$)</label>
+                <input type="number" id="product-price" step="0.01" required>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="product-description"><i class="fas fa-align-left"></i> Descrição</label>
+              <textarea id="product-description" rows="2"></textarea>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="product-category"><i class="fas fa-list-ul"></i> Categoria</label>
+                <select id="product-category">
+                  <option value="tenis-masculino-infantil">Tênis Masculino Infantil</option>
+                  <option value="tenis-feminino-infantil">Tênis Feminino Infantil</option>
+                  <option value="sandalia-masculina-infantil">Sandália Masculina Infantil</option>
+                  <option value="sandalia-feminina-infantil">Sandália Feminina Infantil</option>
+                  <option value="bota-masculina-infantil">Bota Masculina Infantil</option>
+                  <option value="bota-feminina-infantil">Bota Feminina Infantil</option>
+                  <option value="acessorios">Acessórios</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="product-emoji"><i class="fas fa-smile"></i> Emoji do Produto</label>
+                <select id="product-emoji">
+                  <option value="👟">👟 Tênis</option>
+                  <option value="👠">👠 Sandália</option>
+                  <option value="🥾">🥾 Bota</option>
+                  <option value="👡">👡 Sapato</option>
+                  <option value="🩴">🩴 Chinelo</option>
+                  <option value="⚽">⚽ Esportivo</option>
+                  <option value="🧢">🧢 Acessório</option>
+                  <option value="🌟">🌟 Especial</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label><i class="fas fa-images"></i> Fotos do Produto</label>
+              <div class="media-upload-container">
+                <input type="file" id="product-images" accept="image/*" multiple style="display:none">
+                <button type="button" class="media-upload-btn" onclick="document.getElementById('product-images').click()"><i class="fas fa-camera"></i> Adicionar/Alterar Fotos</button>
+                <div class="media-preview" id="images-preview"></div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label><i class="fas fa-video"></i> Vídeo do Produto (opcional)</label>
+              <div class="media-upload-container">
+                <input type="file" id="product-video" accept="video/*" style="display:none">
+                <button type="button" class="media-upload-btn" onclick="document.getElementById('product-video').click()"><i class="fas fa-video"></i> Adicionar/Alterar Vídeo</button>
+                <div class="media-preview" id="video-preview"></div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label><i class="fas fa-ruler-horizontal"></i> Tamanhos e Quantidades</label>
+              <div class="sizes-container" id="sizes-container">
+                <div class="size-input-group" style="display:flex;gap:10px;align-items:center;background:#fff;border:2px solid #e5e7eb;border-radius:12px;padding:12px">
+                  <label style="min-width:80px;margin:0">Tamanho:</label>
+                  <input type="number" class="size-number" min="15" max="45" placeholder="Ex: 20">
+                  <label style="min-width:100px;margin:0">Quantidade:</label>
+                  <input type="number" class="size-quantity" min="0" placeholder="Ex: 10">
+                  <button type="button" class="remove-size-btn" onclick="removeSizeInput(this)" style="display:none"><i class="fas fa-minus"></i></button>
+                </div>
+              </div>
+              <button type="button" class="add-size-btn" onclick="addSizeInput()" style="margin-top:8px"><i class="fas fa-plus"></i> Adicionar Tamanho</button>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <button type="submit" class="submit-btn" id="submit-btn"><i class="fas fa-plus-circle"></i> Adicionar Produto</button>
+              <button type="button" class="cancel-btn" id="cancel-edit" style="display:none" onclick="cancelEdit()"><i class="fas fa-times"></i> Cancelar edição</button>
+            </div>
+          </form>
+          <div style="margin-top:20px">
+            <h3 style="color:#333;margin-bottom:12px;font-family:'Fredoka One',cursive"><i class="fas fa-box-open"></i> Produtos Cadastrados</h3>
+            <div class="product-list" id="admin-product-list"></div>
+          </div>
+        </div>
+
+        <div id="admin-orders-tab" style="display:none;">
+          <div class="orders-section">
+            <h3 style="color:#333;margin-bottom:12px;font-family:'Fredoka One',cursive"><i class="fas fa-receipt"></i> Pedidos</h3>
+            <div class="orders-tabs">
+              <button class="tab-btn active" data-tab="pending">Pendentes</button>
+              <button class="tab-btn" data-tab="approved">Aprovados</button>
+              <button class="tab-btn" data-tab="preparing">Preparando</button>
+              <button class="tab-btn" data-tab="out">Saiu p/ entrega</button>
+              <button class="tab-btn" data-tab="delivered">Entregues</button>
+              <button class="tab-btn" data-tab="canceled">Cancelados</button>
+            </div>
+            <div id="orders-list"></div>
+          </div>
+        </div>
+
+        <div id="admin-stock-tab" style="display:none;">
+          <h3 style="color:#333;margin-bottom:12px;font-family:'Fredoka One',cursive">Relatório de Estoque Baixo</h3>
+          <p style="color:#666; margin-bottom:16px;">Mostrando produtos com <strong>5 ou menos</strong> unidades totais em estoque.</p>
+          <div class="product-list" id="low-stock-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Carrinho inicia oculto para evitar flash -->
+    <section id="cart-section" class="cart-section" style="display:none">
+      <h2 class="section-title" style="margin-bottom:6px">Seu Carrinho</h2>
+      <div id="cart-wrapper"></div>
+      <div class="cart-actions">
+        <button class="cart-btn to-products" onclick="showProducts()"><i class="fas fa-store"></i> Continuar comprando</button>
+        <button class="cart-btn clear-btn" onclick="clearCart()"><i class="fas fa-trash"></i> Limpar carrinho</button>
+        <button class="cart-btn" onclick="finalizeOrder()"><i class="fas fa-paper-plane"></i> Finalizar compra</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>&copy; 2025 Pequenos Passos - Todos os direitos reservados</p>
+      <p>Desenvolvido com <i class="fas fa-heart" style="color:#ff6b9d"></i> para os pequenos exploradores</p>
+    </div>
+  </footer>
+
+  <!-- Notificação global (apenas UMA com este id) -->
+  <div id="notification" class="notification"></div>
+
+  <!-- Modal de Produto -->
+  <div id="product-modal" class="modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <strong id="modal-title">Detalhes do Produto</strong>
+        <button class="close-btn" onclick="closeProductModal()"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-gallery">
+          <div class="big" id="modal-big"></div>
+          <div class="thumbs" id="modal-thumbs"></div>
+        </div>
+        <div>
+          <div id="modal-price" style="font-weight:900;font-size:1.4rem;margin-bottom:8px"></div>
+          <div id="modal-desc" style="color:#555;margin-bottom:10px"></div>
+          <div>
+            <div style="font-weight:800">Tamanhos:</div>
+            <div id="modal-size-grid" class="size-grid"></div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0 12px">
+            <label for="modal-qty" style="font-weight:800">Qtd:</label>
+            <input id="modal-qty" type="number" min="1" value="1" style="width:90px;padding:10px;border:2px solid #e5e7eb;border-radius:10px;font-weight:800">
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button id="modal-add-cart" class="buy-btn" style="flex:1"><i class="fas fa-cart-plus"></i> Adicionar ao carrinho</button>
+            <button id="modal-go-cart" class="buy-btn" style="flex:1;filter:saturate(1.2)"><i class="fas fa-shopping-bag"></i> Ir para o carrinho</button>
+          </div>
+          <div id="modal-related-products" class="related-products-section"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightbox -->
+  <div id="lightbox" class="lightbox" aria-hidden="true">
+    <div class="lightbox-content">
+      <button class="lightbox-close" onclick="closeLightbox()" aria-label="Fechar"><i class="fas fa-times"></i></button>
+      <button class="lightbox-prev" onclick="navLightbox(-1)" aria-label="Anterior"><i class="fas fa-chevron-left"></i></button>
+      <img id="lightbox-img" class="lightbox-img" alt="Visualização em tela cheia">
+      <button class="lightbox-next" onclick="navLightbox(1)" aria-label="Próxima"><i class="fas fa-chevron-right"></i></button>
+    </div>
+  </div>
+
+  <!-- ================== Modal de Checkout ================== -->
+  <div id="checkout-modal" class="modal" role="dialog" aria-labelledby="checkout-title" aria-modal="true" hidden>
+    <div class="modal__overlay" data-close-modal></div>
+
+    <div class="modal__content">
+      <button class="modal__close" type="button" aria-label="Fechar" data-close-modal>&times;</button>
+      <h2 id="checkout-title">Finalizar Pedido</h2>
+
+      <form id="checkout-form" novalidate>
+        <div class="ck-grid">
+          <label class="ck-field">
+            <span>Nome completo</span>
+            <input id="ck-name" name="full_name" type="text" required maxlength="80" autocomplete="name" />
+          </label>
+
+          <label class="ck-field">
+            <span>Telefone (WhatsApp)</span>
+            <input id="ck-phone" name="phone" type="tel" required inputmode="tel"
+                   placeholder="(38) 9 9999-9999" autocomplete="tel" pattern="^\+?\d{10,14}$" />
+          </label>
+        </div>
+
+        <label class="ck-field">
+          <span>Endereço para entrega</span>
+          <input id="ck-address" name="address" type="text" placeholder="Rua, nº - Bairro - Cidade" autocomplete="street-address" />
+        </label>
+
+        <div class="ck-grid">
+          <label class="ck-field">
+            <span>Forma de pagamento</span>
+            <select id="ck-payment" name="payment_method" required>
+              <option value="dinheiro">Dinheiro</option>
+              <option value="cartao">Cartão</option>
+              <option value="pix">Pix</option>
+            </select>
+          </label>
+
+          <label class="ck-field">
+            <span>Observações (opcional)</span>
+            <input id="ck-notes" name="notes" type="text" maxlength="140" placeholder="Ex.: Troco para 50 / portaria / etc" />
+          </label>
+        </div>
+
+        <section class="ck-summary">
+          <h3>Resumo</h3>
+          <div id="checkout-summary"></div>
+        </section>
+
+        <div class="ck-actions">
+          <button type="button" id="btn-send-whatsapp" class="btn btn-primary">Finalizar Pedido</button>
+          <button type="button" class="btn" data-close-modal>Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <!-- ============== /Modal de Checkout ===================== -->
+
+  <!-- Config da API: deve vir antes do app.js -->
+  <!-- Exemplo de config.js:
+  <script>
+    window.__CONFIG__ = { API_URL: 'http://localhost:8000' };
+  </script>
+  -->
+  <script src="config.js" defer></script>
+
+  <!-- Seu JS -->
+  <script src="app.js" defer></script>
+</body>
+</html>
