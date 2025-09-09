@@ -1,33 +1,41 @@
 // routes/products.js (ESM)
-import express from 'express';
+import { Router } from 'express';
 import { pool } from '../db.js';
 
-const router = express.Router();
+const router = Router();
 
 /**
  * GET /products
- * Lista produtos incluindo campos de vídeo
+ * Lista produtos incluindo sizes como array [{size, quantity}]
  */
 router.get('/', async (_req, res) => {
   try {
     const sql = `
       SELECT
-        id,
-        name,
-        description,
-        category,
-        emoji,
-        price_cents,
-        image_url,
-        image_public_id,
-        -- 👇 novos
-        video_url,
-        video_public_id,
-        active,
-        created_at,
-        updated_at
-      FROM public.products
-      ORDER BY created_at DESC
+        p.id,
+        p.name,
+        p.description,
+        p.category,
+        p.emoji,
+        p.price_cents,
+        p.image_url,
+        p.image_public_id,
+        p.video_url,
+        p.video_public_id,
+        p.active,
+        p.created_at,
+        p.updated_at,
+        COALESCE(
+          json_agg(
+            json_build_object('size', ps.size, 'quantity', ps.quantity)
+            ORDER BY ps.size
+          ) FILTER (WHERE ps.size IS NOT NULL),
+          '[]'::json
+        ) AS sizes
+      FROM public.products p
+      LEFT JOIN public.product_sizes ps ON ps.product_id = p.id
+      GROUP BY p.id
+      ORDER BY p.created_at DESC
     `;
     const { rows } = await pool.query(sql);
     res.json(rows);
@@ -39,9 +47,10 @@ router.get('/', async (_req, res) => {
 
 /**
  * POST /products
- * Cria produto aceitando video_url / video_public_id
+ * Cria produto. Aceita opcionalmente sizes: [{size, quantity}]
  */
 router.post('/', async (req, res) => {
+  const client = await pool.connect();
   try {
     const {
       name,
@@ -51,75 +60,62 @@ router.post('/', async (req, res) => {
       price_cents,
       image_url,
       image_public_id,
-      // 👇 novos
       video_url,
       video_public_id,
       active = true,
-      // sizes // se você persiste tamanhos em outra tabela, trate depois
+      sizes = []
     } = req.body || {};
 
-    if (!name || price_cents == null) {
-      return res.status(400).json({ message: 'name e price_cents são obrigatórios' });
-    }
+    await client.query('BEGIN');
 
-    const sql = `
-      INSERT INTO public.products (
-        name, description, category, emoji, price_cents,
-        image_url, image_public_id,
-        video_url, video_public_id,
-        active, created_at, updated_at
-      )
-      VALUES (
-        $1, $2, $3, $4, $5,
-        $6, $7,
-        $8, $9,
-        $10, NOW(), NOW()
-      )
-      RETURNING
-        id, name, description, category, emoji, price_cents,
-        image_url, image_public_id,
-        video_url, video_public_id,
-        active, created_at, updated_at
-    `;
-
-    const params = [
-      name,
-      description || name,
-      category || null,
-      emoji || null,
-      Number(price_cents),
-      image_url || null,
-      image_public_id || null,
-      video_url || null,
-      video_public_id || null,
-      !!active,
-    ];
-
-    const { rows } = await pool.query(sql, params);
+    const ins = `
+      INSERT INTO public.products
+        (name, description, category, emoji, price_cents, image_url, image_public_id, video_url, video_public_id, active)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      RETURNING *`;
+    const { rows } = await client.query(ins, [
+      name, description || name, category, emoji || '👟',
+      price_cents ?? 0,
+      image_url || null, image_public_id || null,
+      video_url || null, video_public_id || null,
+      active
+    ]);
     const product = rows[0];
 
-    // TODO: se você usa tabela separada p/ tamanhos (products_sizes), insira aqui.
+    // upsert sizes
+    if (Array.isArray(sizes)) {
+      for (const s of sizes) {
+        if (!s?.size) continue;
+        await client.query(
+          `INSERT INTO public.product_sizes (product_id, size, quantity)
+           VALUES ($1,$2,$3)
+           ON CONFLICT (product_id, size)
+           DO UPDATE SET quantity = EXCLUDED.quantity`,
+          [product.id, String(s.size), Number(s.quantity || 0)]
+        );
+      }
+    }
 
-    res.json(product);
+    await client.query('COMMIT');
+    res.status(201).json(product);
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('POST /products error:', err);
     res.status(500).json({ message: 'Failed to create product' });
+  } finally {
+    client.release();
   }
 });
 
 /**
  * PUT /products/:id
- * Atualiza produto; preserva campos se vierem undefined
+ * Atualiza o produto e faz upsert dos sizes enviados.
+ * Se não enviar sizes, mantém os existentes.
  */
 router.put('/:id', async (req, res) => {
+  const client = await pool.connect();
   try {
     const { id } = req.params;
-
-    // busca atual p/ preservar valores quando não enviados
-    const prevQ = await pool.query('SELECT * FROM public.products WHERE id = $1', [id]);
-    if (!prevQ.rows.length) return res.status(404).json({ message: 'Product not found' });
-    const prev = prevQ.rows[0];
-
     const {
       name,
       description,
@@ -128,53 +124,76 @@ router.put('/:id', async (req, res) => {
       price_cents,
       image_url,
       image_public_id,
-      // 👇 novos (podem vir undefined)
       video_url,
       video_public_id,
       active,
+      sizes
     } = req.body || {};
 
-    const sql = `
-      UPDATE public.products
-      SET
-        name             = COALESCE($1, name),
-        description      = COALESCE($2, description),
-        category         = COALESCE($3, category),
-        emoji            = COALESCE($4, emoji),
-        price_cents      = COALESCE($5, price_cents),
-        image_url        = $6,
-        image_public_id  = $7,
-        video_url        = $8,
-        video_public_id  = $9,
-        active           = COALESCE($10, active),
-        updated_at       = NOW()
-      WHERE id = $11
-      RETURNING
-        id, name, description, category, emoji, price_cents,
-        image_url, image_public_id,
-        video_url, video_public_id,
-        active, created_at, updated_at
-    `;
+    await client.query('BEGIN');
 
-    const params = [
-      name ?? null,
-      (description ?? null),
-      category ?? null,
-      emoji ?? null,
-      (price_cents != null ? Number(price_cents) : null),
-      (image_url === undefined ? prev.image_url : image_url),
-      (image_public_id === undefined ? prev.image_public_id : image_public_id),
-      (video_url === undefined ? prev.video_url : video_url),                   // 👈 preserva
-      (video_public_id === undefined ? prev.video_public_id : video_public_id), // 👈 preserva
-      (active === undefined ? null : !!active),
-      id,
-    ];
+    const upd = `
+      UPDATE public.products SET
+        name = COALESCE($2, name),
+        description = COALESCE($3, description),
+        category = COALESCE($4, category),
+        emoji = COALESCE($5, emoji),
+        price_cents = COALESCE($6, price_cents),
+        image_url = COALESCE($7, image_url),
+        image_public_id = COALESCE($8, image_public_id),
+        video_url = COALESCE($9, video_url),
+        video_public_id = COALESCE($10, video_public_id),
+        active = COALESCE($11, active),
+        updated_at = now()
+      WHERE id = $1
+      RETURNING *`;
+    const { rows } = await client.query(upd, [
+      id, name, description, category, emoji,
+      price_cents, image_url, image_public_id,
+      video_url, video_public_id, active
+    ]);
+    const product = rows[0];
+    if (!product) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Product not found' });
+    }
 
-    const { rows } = await pool.query(sql, params);
-    res.json(rows[0]);
+    if (Array.isArray(sizes)) {
+      for (const s of sizes) {
+        if (!s?.size) continue;
+        await client.query(
+          `INSERT INTO public.product_sizes (product_id, size, quantity)
+           VALUES ($1,$2,$3)
+           ON CONFLICT (product_id, size)
+           DO UPDATE SET quantity = EXCLUDED.quantity`,
+          [id, String(s.size), Number(s.quantity || 0)]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json(product);
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('PUT /products/:id error:', err);
     res.status(500).json({ message: 'Failed to update product' });
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * DELETE /products/:id
+ */
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM public.products WHERE id=$1', [id]);
+    // ON DELETE CASCADE remove os tamanhos vinculados
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /products/:id error:', err);
+    res.status(500).json({ message: 'Failed to delete product' });
   }
 });
 
