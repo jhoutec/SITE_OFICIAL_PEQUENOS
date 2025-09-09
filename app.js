@@ -550,18 +550,63 @@ function showProductModal(id){
   byId('product-modal').classList.add('open');
   byId('product-modal').setAttribute('aria-hidden','false'); // aberto = aria-hidden false
 }
-function setBigMedia(src, isVideo){
+function setBigMedia(src, isVideo) {
   const big = byId('modal-big');
+
   if (isVideo) {
-    big.innerHTML = `<video src='${src}' controls autoplay muted playsinline style='width:100%;height:100%;object-fit:cover'></video>`;
+    big.innerHTML = `
+      <div class="video-wrapper" style="position:relative;width:100%;height:100%">
+        <video id="modal-video"
+               src="${src}"
+               controls
+               autoplay
+               muted
+               playsinline
+               preload="metadata"
+               style="width:100%;height:100%;object-fit:cover;border-radius:12px"></video>
+
+        <button type="button" class="fs-btn"
+                style="position:absolute;right:8px;bottom:8px;border:none;border-radius:10px;padding:6px 10px;background:rgba(0,0,0,.55);color:#fff;cursor:pointer">
+          <i class="fas fa-maximize"></i>
+        </button>
+      </div>`;
+
+    const vid = byId('modal-video');
+    const fsBtn = big.querySelector('.fs-btn');
+
+    const goFullscreen = () => {
+      // iPhone/iPad
+      if (vid.webkitEnterFullscreen) {
+        try { vid.webkitEnterFullscreen(); return; } catch {}
+      }
+      // Fullscreen API padrão
+      if (vid.requestFullscreen) return vid.requestFullscreen();
+      if (big.requestFullscreen) return big.requestFullscreen();
+    };
+
+    // Clicar no vídeo -> fullscreen, mas sem pausar
+    vid.addEventListener('click', (e) => {
+      e.preventDefault();   // evita o play/pause padrão
+      e.stopPropagation();  // não propaga
+      goFullscreen();
+    });
+
+    // Botão de maximizar
+    fsBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      goFullscreen();
+    });
+
   } else {
     big.innerHTML = `
       <img loading="lazy" src='${large(src)}' data-original='${src}'
            onerror="handleImgError(event)" alt='media'
-           style='width:100%;height:100%;object-fit:cover'>
+           style='width:100%;height:100%;object-fit:cover;border-radius:12px'>
       <div class="zoom-hint"><i class="fas fa-maximize"></i></div>`;
   }
 }
+
 function closeProductModal(){
   byId('product-modal').classList.remove('open');
   byId('product-modal').setAttribute('aria-hidden','true');
