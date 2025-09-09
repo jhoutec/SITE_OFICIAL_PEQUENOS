@@ -189,11 +189,16 @@ function mapBackendProductToFrontend(p) {
     emoji: p.emoji || "👟",
     price: (p.price_cents || 0) / 100,
     sizes: Array.isArray(p.sizes) ? p.sizes : [],
-    images: p.image_url ? [p.image_url] : [],
+    images: p.image_url ? [p.image_url] : (Array.isArray(p.images) ? p.images : []),
     image_public_id: p.image_public_id || null,
-    video: p.video_url || null          // 👈 agora traz o vídeo do backend
+
+    // ✅ aceita várias chaves do backend e PRIORIZA HLS
+    video: p.video_playback_url || p.video_url || p.video || p.videoUrl || null,
+    video_playback_url: p.video_playback_url || null,
+    video_public_id: p.video_public_id || null,
   };
 }
+
 // helper inverso (para atualizar estoque)
 function mapFrontendProductToBackend(p, override = {}) {
   return {
@@ -1160,6 +1165,13 @@ async function submitProduct(e){
     console.warn('⚠️ Falha no upload Cloudinary (vídeo), seguindo sem video_url.', upErr);
   }
 
+  // ✅ PRESERVA mídia existente ao editar (não zera no PUT)
+  const prev = editingId !== null ? products.find(x => String(x.id) === String(editingId)) : null;
+  const finalImageURL       = uploadedImg?.secure_url ?? (prev?.images?.[0] ?? null);
+  const finalImagePublicId  = uploadedImg?.public_id  ?? (prev?.image_public_id ?? null);
+  const finalVideoURL       = uploadedVid?.secure_url ?? (prev?.video ?? null);
+  const finalVideoPublicId  = uploadedVid?.public_id  ?? (prev?.video_public_id ?? null);
+
   const payload = {
     name,
     description: description || name,
@@ -1168,10 +1180,10 @@ async function submitProduct(e){
     emoji,
     sizes,
     active: true,
-    image_url: uploadedImg?.secure_url || null,
-    image_public_id: uploadedImg?.public_id || null,
-    video_url: uploadedVid?.secure_url || null,       // 👈 envia vídeo p/ backend
-    video_public_id: uploadedVid?.public_id || null
+    image_url: finalImageURL,
+    image_public_id: finalImagePublicId,
+    video_url: finalVideoURL,        // ✅ só manda novo ou preserva o antigo
+    video_public_id: finalVideoPublicId
   };
 
   try{
@@ -1187,13 +1199,13 @@ async function submitProduct(e){
     }else{
       // fallback local
       if(editingId!==null){
-        const idx = products.findIndex(x=>x.id===editingId);
+        const idx = products.findIndex(x=>String(x.id)===String(editingId));
         if(idx<0) throw new Error('Produto não encontrado');
-        const prev = products[idx];
+        const prevLocal = products[idx];
         const images = uploadedImg?.secure_url ? [uploadedImg.secure_url] :
-                       (tempImages.length ? [...tempImages] : (prev.images||[]));
-        const video = (tempVideo!==null) ? tempVideo : prev.video;
-        products[idx] = { ...prev, name, price, description: description||name, category, sizes, emoji, images, video };
+                       (tempImages.length ? [...tempImages] : (prevLocal.images||[]));
+        const video = (tempVideo!==null) ? tempVideo : prevLocal.video;
+        products[idx] = { ...prevLocal, name, price, description: description||name, category, sizes, emoji, images, video };
         showNotification(`✏️ Produto "${name}" atualizado (local).`);
       }else{
         const images = uploadedImg?.secure_url ? [uploadedImg.secure_url] : [...tempImages];
