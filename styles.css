@@ -61,12 +61,25 @@ main{padding:40px 0}
 .product-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(45deg,var(--grad1),var(--grad2),var(--grad3),var(--grad1));background-size:300% 300%;animation:gradientShift 3s ease infinite}
 .product-card:hover{transform:translateY(-6px);box-shadow:0 20px 50px rgba(0,0,0,.12);border-color:rgba(255,107,157,.25)}
 .product-image{width:100%;height:210px;border-radius:18px;margin-bottom:14px;display:flex;align-items:center;justify-content:center;font-size:4rem;position:relative;overflow:hidden;background:linear-gradient(135deg,#f8f9fa,#e9ecef)}
-.product-image img,.product-image video{width:100%;height:100%;object-fit:cover}
+
+/* ===== MÍDIA DO CARD ===== */
+.product-image img{
+  width:100%; height:100%; object-fit:cover; display:block; border-radius:inherit;
+  background:#f0f2f5;
+}
+/* (novo) evita clique no vídeo atrapalhar o card e melhora contraste de bordas */
+.product-image video{
+  width:100%; height:100%; object-fit:cover; display:block; border-radius:inherit;
+  background:#000; pointer-events:none;
+}
+
 .product-title{font-size:1.15rem;font-weight:900;color:#333;text-align:center;margin-bottom:6px}
 .product-price{font-size:1.4rem;font-weight:900;text-align:center;background:linear-gradient(45deg,var(--grad1),var(--grad2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
 .product-description{color:var(--muted);text-align:center;font-weight:600;margin-bottom:10px}
 .buy-btn{width:100%;padding:12px 16px;border:none;border-radius:22px;font-size:1rem;font-weight:900;text-transform:uppercase;letter-spacing:.5px;background:linear-gradient(45deg,var(--grad1),var(--grad2));color:#fff;cursor:pointer;transition:.25s}
 .buy-btn:hover{transform:translateY(-2px)}
+/* (novo) estado desabilitado – usado no modal quando sem estoque */
+.buy-btn[disabled]{opacity:.6;cursor:not-allowed;filter:grayscale(1)}
 
 /* Login/Admin/Cart containers */
 .login-section,.admin-section,.cart-section{display:none;background:rgba(255,255,255,.96);border-radius:25px;padding:30px;margin:30px 0;box-shadow:0 15px 35px rgba(0,0,0,.08)}
@@ -102,6 +115,8 @@ main{padding:40px 0}
 .media-preview{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
 .media-thumb{width:70px;height:70px;border-radius:10px;overflow:hidden;border:2px solid #eee;display:flex;align-items:center;justify-content:center;background:#fafafa}
 .media-thumb img,.media-thumb video{width:100%;height:100%;object-fit:cover}
+/* (novo) melhora contraste das thumbs de vídeo */
+.media-thumb video{background:#000;border-radius:10px}
 .media-upload-container{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}
 .media-upload-btn{padding:10px 14px;border:none;border-radius:12px;font-weight:800;color:#fff;cursor:pointer;background:linear-gradient(45deg,#3b82f6,#06b6d4);box-shadow:0 6px 16px rgba(59,130,246,.25)}
 
@@ -153,7 +168,9 @@ footer::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;back
 .modal-header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #eee}
 .modal-body{padding:18px;display:grid;grid-template-columns:1.2fr .8fr;gap:18px}
 .modal-gallery{position:relative}
-.modal-gallery .big{width:100%;height:360px;border-radius:14px;overflow:hidden;background:#f5f5f5;display:flex;align-items:center;justify-content:center;cursor:zoom-in;position:relative}
+.modal-gallery .big{width:100%;height:360px;border-radius:14px;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;cursor:zoom-in;position:relative}
+/* (novo) vídeo grande com bom contraste */
+.modal-gallery .big video{width:100%;height:100%;object-fit:cover;display:block;background:#000;border-radius:12px}
 .modal-gallery .zoom-hint{position:absolute;bottom:10px;right:10px;background:rgba(0,0,0,.6);color:#fff;font-size:.8rem;padding:6px 10px;border-radius:999px}
 .thumbs{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 .thumbs .media-thumb{width:64px;height:64px;cursor:pointer;border:2px solid transparent}
@@ -216,6 +233,13 @@ footer::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;back
 .ck-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px;flex-wrap:wrap}
 .btn-primary{background:linear-gradient(45deg,#25D366,#128C7E)}
 
+/* Acessibilidade: foco visível (novo) */
+:where(a,button,input,select,textarea):focus-visible{
+  outline:3px solid rgba(255,107,157,.55);
+  outline-offset:2px;
+  border-radius:12px;
+}
+
 /* Responsivo */
 @media (max-width:992px){
   nav{justify-content: center;}
@@ -236,3 +260,22 @@ footer::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;back
   .ck-grid{grid-template-columns:1fr}
 }
 .modal-body .buy-btn { padding: 8px 14px; font-size: 0.9rem; }
+/* Mostra o vídeo por completo quando em tela cheia */
+/* vídeo ocupa todo o espaço quando ele mesmo entra em fullscreen */
+#modal-video:fullscreen,
+#modal-video:-webkit-full-screen {
+  object-fit: contain !important;
+  background: #000;
+}
+
+/* evita scroll quando qualquer coisa estiver em fullscreen */
+:fullscreen body,
+:-webkit-full-screen body {
+  overflow: hidden;
+}
+
+/* opcional: quando em fullscreen, mostre vídeo inteiro */
+:fullscreen #modal-video {
+  object-fit: contain !important;
+  background: #000;
+}

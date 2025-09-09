@@ -8,6 +8,8 @@
   <!-- Libs externas -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Fredoka+One:wght@400&family=Nunito:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://res.cloudinary.com" crossorigin>
+<link rel="preconnect" href="https://api.cloudinary.com" crossorigin>
 
   <!-- Seu CSS -->
   <link rel="stylesheet" href="styles.css">
@@ -15,17 +17,21 @@
 <body>
   <header>
     <nav class="container">
-      <div class="logo">Pequenos Passos</div>
+      <div class="logo" id="pp-logo" title="Pequenos Passos">Pequenos Passos</div>
+
       <div class="search-bar">
         <input type="search" id="search-input" placeholder="Buscar produtos..." oninput="filterProducts()">
         <button type="button" onclick="filterProducts()"><i class="fas fa-search"></i></button>
       </div>
+
       <div class="nav-links">
         <a href="#" onclick="showHome()"><i class="fas fa-home"></i> Home</a>
         <a href="#" onclick="showProducts()"><i class="fas fa-shoe-prints"></i> Produtos</a>
         <a href="#" onclick="showCart()"><i class="fas fa-shopping-cart"></i> Carrinho <span id="cart-count" class="cart-badge">0</span></a>
         <a href="#" onclick="showContact()"><i class="fas fa-phone"></i> Contato</a>
-        <a href="#" class="admin-btn" onclick="showAdmin()"><i class="fas fa-cog"></i> Admin</a>
+
+        <!-- Botão Admin mascarado (oculto) -->
+        <a href="#" class="admin-btn" onclick="showAdmin()" style="display:none"><i class="fas fa-cog"></i> Admin</a>
       </div>
     </nav>
   </header>
@@ -85,14 +91,12 @@
     <section id="login-section" class="login-section" style="display:none">
       <div class="login-title">Acesso Administrativo</div>
       <form class="login-form" id="login-form">
-        <input type="text" id="username" class="login-input" placeholder="👤 Usuário" required>
-        <input type="password" id="password" class="login-input" placeholder="🔑 Senha" required>
+        <input type="text" id="username" class="login-input" placeholder="👤 Usuário" required autocomplete="username">
+        <input type="password" id="password" class="login-input" placeholder="🔑 Senha" required autocomplete="current-password">
         <button type="submit" class="login-btn"><i class="fas fa-sign-in-alt"></i> Entrar</button>
         <div id="login-error" class="error-message"></div>
       </form>
-      <div class="admin-info" style="margin-top:14px">
-        <strong>📝 Credenciais de teste:</strong> Usuário: <code>admin</code> • Senha: <code>pequenospassos123</code>
-      </div>
+      <!-- (sem dica de usuário/senha) -->
     </section>
 
     <!-- Admin também inicia oculto -->
@@ -357,5 +361,41 @@
 
   <!-- Seu JS -->
   <script src="app.js" defer></script>
+
+  <!-- Atalhos secretos p/ abrir o Admin sem botão visível -->
+  <script>
+    // Observação: showAdmin() já faz o gate.
+    // Se NÃO estiver logado, ele mostra a tela de login (#login-section).
+    // Se estiver logado, mostra o painel (#admin-section).
+
+    // 1) 10 cliques rápidos na logo
+    document.addEventListener('DOMContentLoaded', () => {
+      const logo = document.getElementById('pp-logo');
+      if (!logo) return;
+
+      let clicks = 0;
+      let timer = null;
+      const threshold = 10;       // <-- mais seguro: 10 cliques
+      const windowMs  = 1200;     // janela de tempo para considerar "rápidos"
+
+      logo.addEventListener('click', () => {
+        clicks++;
+        clearTimeout(timer);
+        timer = setTimeout(() => { clicks = 0; }, windowMs);
+        if (clicks >= threshold) {
+          clicks = 0;
+          try { showAdmin(); } catch {}
+        }
+      });
+    });
+
+    // 2) Ctrl + Alt + A
+    window.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.altKey && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        try { showAdmin(); } catch {}
+      }
+    });
+  </script>
 </body>
 </html>

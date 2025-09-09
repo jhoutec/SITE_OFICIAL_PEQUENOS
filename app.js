@@ -7,6 +7,7 @@ const REMOTE_CATALOG_URL = 'products.json'; // catálogo compartilhado (fallback
 const LOW_STOCK_THRESHOLD = 5;
 const CHECKOUT_INFO_KEY = 'pp_checkout_info_v1';
 
+
 // === API (lê do config.js) ===
 const API_URL = window.__CONFIG__?.API_URL || 'http://localhost:8000'; // ✅ usa sempre API_URL
 
@@ -151,7 +152,29 @@ async function uploadImageToCloudinary(dataUrl, sig){
   const r = await fetch(endpoint, { method: 'POST', body: form });
   if(!r.ok){
     const txt = await r.text().catch(()=> '');
-    throw new Error(txt || 'Falha no upload Cloudinary');
+    throw new Error(txt || 'Falha no upload Cloudinary (imagem)');
+  }
+  return await r.json();
+}
+// 👇 NOVO: upload de VÍDEO
+async function uploadVideoToCloudinary(dataUrl, sig){
+  const { cloud_name, api_key, timestamp, signature, folder } = sig || {};
+  if(!cloud_name || !api_key || !timestamp || !signature){
+    throw new Error('Assinatura Cloudinary ausente/ inválida.');
+  }
+  const endpoint = `https://api.cloudinary.com/v1_1/${cloud_name}/video/upload`;
+  const form = new FormData();
+  form.append('file', dataUrl);
+  form.append('api_key', api_key);
+  form.append('timestamp', timestamp);
+  form.append('signature', signature);
+  form.append('folder', folder);
+  if(sig.public_id) form.append('public_id', sig.public_id);
+
+  const r = await fetch(endpoint, { method: 'POST', body: form });
+  if(!r.ok){
+    const txt = await r.text().catch(()=> '');
+    throw new Error(txt || 'Falha no upload Cloudinary (vídeo)');
   }
   return await r.json();
 }
@@ -166,11 +189,16 @@ function mapBackendProductToFrontend(p) {
     emoji: p.emoji || "👟",
     price: (p.price_cents || 0) / 100,
     sizes: Array.isArray(p.sizes) ? p.sizes : [],
-    images: p.image_url ? [p.image_url] : [],
+    images: p.image_url ? [p.image_url] : (Array.isArray(p.images) ? p.images : []),
     image_public_id: p.image_public_id || null,
-    video: null
+
+    // ✅ aceita várias chaves do backend e PRIORIZA HLS
+    video: p.video_playback_url || p.video_url || p.video || p.videoUrl || null,
+    video_playback_url: p.video_playback_url || null,
+    video_public_id: p.video_public_id || null,
   };
 }
+
 // helper inverso (para atualizar estoque)
 function mapFrontendProductToBackend(p, override = {}) {
   return {
@@ -183,6 +211,7 @@ function mapFrontendProductToBackend(p, override = {}) {
     active: true,
     image_url: (p.images && p.images[0]) || null,
     image_public_id: p.image_public_id || null
+    // intencionalmente sem video_* aqui (evita sobrescrever em updates de estoque)
   };
 }
 async function fetchProductsFromAPI() {
@@ -344,40 +373,85 @@ function filterProducts(){
 }
 
 // ===== RENDERIZAÇÃO DE PRODUTOS =====
-function renderProducts(){
-  const grid=byId('products-grid'); grid.innerHTML='';
-  if(filteredProducts.length===0){
-    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:#666"><i class='fas fa-search' style='font-size:3rem;margin-bottom:12px;opacity:.5'></i><h3>Nenhum produto encontrado</h3><p>Tente alterar os filtros ou o termo da busca.</p></div>`;
+function renderProducts() {
+  const grid = byId('products-grid');
+  grid.innerHTML = '';
+
+  if (filteredProducts.length === 0) {
+    grid.innerHTML = `
+      <div style="grid-column:1/-1;text-align:center;padding:40px;color:#666">
+        <i class='fas fa-search' style='font-size:3rem;margin-bottom:12px;opacity:.5'></i>
+        <h3>Nenhum produto encontrado</h3>
+        <p>Tente alterar os filtros ou o termo da busca.</p>
+      </div>`;
     return;
   }
-  filteredProducts.forEach(product=>{
-    const totalStock = product.sizes.reduce((t,s)=>t+Number(s.quantity||0),0);
-    let productImageContent = `<span style="font-size:4rem">${product.emoji||'👟'}</span>`;
-    if (product.images && product.images.length) {
+
+  filteredProducts.forEach(product => {
+    const totalStock = product.sizes.reduce((t, s) => t + Number(s.quantity || 0), 0);
+
+    // ===== MÍDIA DO CARD (VÍDEO TEM PRIORIDADE) =====
+    let productMediaHtml = `<span style="font-size:4rem">${product.emoji || '👟'}</span>`;
+
+    if (product.video) {
+      // se houver imagem, usamos como poster; #t=0.1 ajuda a carregar o primeiro frame
+      const poster = (product.images && product.images.length) ? thumb(product.images[0]) : '';
+      productMediaHtml = `
+        <video
+          src="${product.video}#t=0.1"
+          ${poster ? `poster="${poster}"` : ''}
+          autoplay
+          muted
+          loop
+          playsinline
+          preload="metadata">
+        </video>`;
+    } else if (product.images && product.images.length) {
       const src = thumb(product.images[0]);
-      productImageContent = `<img loading="lazy" src="${src}" onerror="handleImgError(event)" alt="${escapeHtml(product.name)}">`;
-    } else if (product.video) {
-      productImageContent = `<video src="${product.video}" muted loop></video>`;
+      productMediaHtml = `
+        <img
+          loading="lazy"
+          src="${src}"
+          onerror="handleImgError(event)"
+          alt="${escapeHtml(product.name)}">`;
     }
-    const card=document.createElement('div'); card.className='product-card';
+
+    // ===== CARD =====
+    const card = document.createElement('div');
+    card.className = 'product-card';
     const disabledAttr = totalStock === 0 ? 'disabled' : '';
+
     card.innerHTML = `
-      <div class="product-image js-open-modal" data-id="${product.id}" style="cursor:pointer">
-        ${productImageContent}
-        ${product.images && product.images.length>1 ? `<div style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;padding:2px 6px;border-radius:10px;font-size:.75rem"><i class='fas fa-images'></i> ${product.images.length}</div>`:''}
-        ${product.video ? `<div style="position:absolute;bottom:6px;left:6px;background:rgba(255,107,157,.9);color:#fff;padding:2px 6px;border-radius:10px;font-size:.75rem"><i class='fas fa-play'></i></div>`:''}
+      <div class="product-image js-open-modal" data-id="${product.id}" style="cursor:pointer; position: relative;">
+        ${productMediaHtml}
+        ${product.images && product.images.length > 1
+          ? `<div style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;padding:2px 6px;border-radius:10px;font-size:.75rem">
+               <i class='fas fa-images'></i> ${product.images.length}
+             </div>` : ''}
+        ${product.video
+          ? `<div style="position:absolute;bottom:6px;left:6px;background:rgba(255,107,157,.9);color:#fff;padding:2px 6px;border-radius:10px;font-size:.75rem">
+               <i class='fas fa-play'></i>
+             </div>` : ''}
       </div>
+
       <h3 class='product-title'>${escapeHtml(product.name)}</h3>
       <p class='product-price'>${brl(product.price)}</p>
-      <p class='product-description'>${escapeHtml(product.description||'')}</p>
-      <p style='color:#999;font-size:.9rem;margin-bottom:12px;text-align:center'><i class='fas fa-box'></i> ${totalStock} unidades</p>
+      <p class='product-description'>${escapeHtml(product.description || '')}</p>
+      <p style='color:#999;font-size:.9rem;margin-bottom:12px;text-align:center'>
+        <i class='fas fa-box'></i> ${totalStock} unidades
+      </p>
       <button class="buy-btn js-open-modal" data-id="${product.id}" ${disabledAttr}>
-        ${ totalStock>0 ? `<i class="fas fa-shopping-cart"></i> Comprar` : 'Esgotado' }
-      </button>`;
-    if(totalStock===0){
-      card.style.opacity='.6';
-      const btn=card.querySelector('.buy-btn'); btn.style.background='#ccc'; btn.style.cursor='not-allowed';
+        ${ totalStock > 0 ? `<i class="fas fa-shopping-cart"></i> Comprar` : 'Esgotado' }
+      </button>
+    `;
+
+    if (totalStock === 0) {
+      card.style.opacity = '.6';
+      const btn = card.querySelector('.buy-btn');
+      btn.style.background = '#ccc';
+      btn.style.cursor = 'not-allowed';
     }
+
     grid.appendChild(card);
   });
 }
@@ -476,18 +550,63 @@ function showProductModal(id){
   byId('product-modal').classList.add('open');
   byId('product-modal').setAttribute('aria-hidden','false'); // aberto = aria-hidden false
 }
-function setBigMedia(src, isVideo){
+function setBigMedia(src, isVideo) {
   const big = byId('modal-big');
+
   if (isVideo) {
-    big.innerHTML = `<video src='${src}' controls autoplay style='width:100%;height:100%;object-fit:cover'></video>`;
+    big.innerHTML = `
+      <div class="video-wrapper" style="position:relative;width:100%;height:100%">
+        <video id="modal-video"
+               src="${src}"
+               controls
+               autoplay
+               muted
+               playsinline
+               preload="metadata"
+               style="width:100%;height:100%;object-fit:cover;border-radius:12px"></video>
+
+        <button type="button" class="fs-btn"
+                style="position:absolute;right:8px;bottom:8px;border:none;border-radius:10px;padding:6px 10px;background:rgba(0,0,0,.55);color:#fff;cursor:pointer">
+          <i class="fas fa-maximize"></i>
+        </button>
+      </div>`;
+
+    const vid = byId('modal-video');
+    const fsBtn = big.querySelector('.fs-btn');
+
+    const goFullscreen = () => {
+      // iPhone/iPad
+      if (vid.webkitEnterFullscreen) {
+        try { vid.webkitEnterFullscreen(); return; } catch {}
+      }
+      // Fullscreen API padrão
+      if (vid.requestFullscreen) return vid.requestFullscreen();
+      if (big.requestFullscreen) return big.requestFullscreen();
+    };
+
+    // Clicar no vídeo -> fullscreen, mas sem pausar
+    vid.addEventListener('click', (e) => {
+      e.preventDefault();   // evita o play/pause padrão
+      e.stopPropagation();  // não propaga
+      goFullscreen();
+    });
+
+    // Botão de maximizar
+    fsBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      goFullscreen();
+    });
+
   } else {
     big.innerHTML = `
       <img loading="lazy" src='${large(src)}' data-original='${src}'
            onerror="handleImgError(event)" alt='media'
-           style='width:100%;height:100%;object-fit:cover'>
+           style='width:100%;height:100%;object-fit:cover;border-radius:12px'>
       <div class="zoom-hint"><i class="fas fa-maximize"></i></div>`;
   }
 }
+
 function closeProductModal(){
   byId('product-modal').classList.remove('open');
   byId('product-modal').setAttribute('aria-hidden','true');
@@ -862,7 +981,6 @@ async function renderOrders(tab = 'PENDING') {
         return `${idx + 1}) ${escapeHtml(pname)} • Tam ${it.size || '-'} • Qtd ${it.qty} • ${brl((it.price_cents || 0)/100)}`;
       }).join('<br>');
 
-      // botões por status (mantém sua lógica)
       const actions =
         o.status === 'PENDING'
           ? `<button class="btn btn-approve" onclick="approveOrder('${o.id}')"><i class="fas fa-check"></i> Aprovar</button>
@@ -871,7 +989,6 @@ async function renderOrders(tab = 'PENDING') {
               ? `<button class="btn btn-cancel" onclick="returnOrderToStock('${o.id}')"><i class="fas fa-undo"></i> Devolver ao estoque</button>`
               : `<button class="btn btn-cancel" onclick="deleteOrderLocal('${o.id}')"><i class="fas fa-trash"></i> Remover (local)</button>`);
 
-      // 👇 AQUI entram o nome/telefone do cliente e o botão do WhatsApp do CLIENTE
       return `<div class="order-card" data-oid="${o.id}">
         <div class="order-header">
           <strong>Pedido #${o.id}</strong>
@@ -986,6 +1103,7 @@ function setupMediaUpload(){
   const vidInput=byId('product-video');
   const imgPrev=byId('images-preview');
   const vidPrev=byId('video-preview');
+
   imgInput.addEventListener('change',async (e)=>{
     tempImages=[]; imgPrev.innerHTML='';
     const files=[...e.target.files].slice(0,8);
@@ -998,10 +1116,16 @@ function setupMediaUpload(){
       imgPrev.appendChild(thumb);
     }
   });
+
   vidInput.addEventListener('change',async (e)=>{
     tempVideo=null; vidPrev.innerHTML='';
     const f=e.target.files[0];
     if(f){
+      // validações simples
+      if(!f.type.startsWith('video/')) { showNotification('Selecione um arquivo de vídeo.','error'); return; }
+      const MAX_MB = 80; // ajuste se quiser
+      if(f.size > MAX_MB*1024*1024){ showNotification(`Vídeo muito grande (>${MAX_MB}MB).`, 'error'); return; }
+
       const data=await fileToDataURL(f);
       tempVideo=data;
       const t=document.createElement('div');
@@ -1059,18 +1183,39 @@ async function submitProduct(e){
   }
 
   // upload primeira imagem (se houver)
-  let uploaded = null;
+  let uploadedImg = null;
   try{
     if (tempImages.length > 0){
       const wantedFolder = 'pequenos-passos';
       const publicId = `${slugify(name)}-${Date.now()}`;
       const sig = await getCloudinarySignature(wantedFolder, publicId);
       sig.public_id = publicId;
-      uploaded = await uploadImageToCloudinary(tempImages[0], sig);
+      uploadedImg = await uploadImageToCloudinary(tempImages[0], sig);
     }
   }catch(upErr){
-    console.warn('⚠️ Falha no upload Cloudinary, seguindo sem image_url.', upErr);
+    console.warn('⚠️ Falha no upload Cloudinary (imagem), seguindo sem image_url.', upErr);
   }
+
+  // upload vídeo (se houver)
+  let uploadedVid = null;
+  try{
+    if (tempVideo){
+      const wantedFolder = 'pequenos-passos';
+      const publicId = `${slugify(name)}-video-${Date.now()}`;
+      const sig = await getCloudinarySignature(wantedFolder, publicId);
+      sig.public_id = publicId;
+      uploadedVid = await uploadVideoToCloudinary(tempVideo, sig);
+    }
+  }catch(upErr){
+    console.warn('⚠️ Falha no upload Cloudinary (vídeo), seguindo sem video_url.', upErr);
+  }
+
+  // ✅ PRESERVA mídia existente ao editar (não zera no PUT)
+  const prev = editingId !== null ? products.find(x => String(x.id) === String(editingId)) : null;
+  const finalImageURL       = uploadedImg?.secure_url ?? (prev?.images?.[0] ?? null);
+  const finalImagePublicId  = uploadedImg?.public_id  ?? (prev?.image_public_id ?? null);
+  const finalVideoURL       = uploadedVid?.secure_url ?? (prev?.video ?? null);
+  const finalVideoPublicId  = uploadedVid?.public_id  ?? (prev?.video_public_id ?? null);
 
   const payload = {
     name,
@@ -1080,8 +1225,10 @@ async function submitProduct(e){
     emoji,
     sizes,
     active: true,
-    image_url: uploaded?.secure_url || null,
-    image_public_id: uploaded?.public_id || null
+    image_url: finalImageURL,
+    image_public_id: finalImagePublicId,
+    video_url: finalVideoURL,        // ✅ só manda novo ou preserva o antigo
+    video_public_id: finalVideoPublicId
   };
 
   try{
@@ -1097,16 +1244,16 @@ async function submitProduct(e){
     }else{
       // fallback local
       if(editingId!==null){
-        const idx = products.findIndex(x=>x.id===editingId);
+        const idx = products.findIndex(x=>String(x.id)===String(editingId));
         if(idx<0) throw new Error('Produto não encontrado');
-        const prev = products[idx];
-        const images = uploaded?.secure_url ? [uploaded.secure_url] :
-                       (tempImages.length ? [...tempImages] : (prev.images||[]));
-        const video = (tempVideo!==null) ? tempVideo : prev.video;
-        products[idx] = { ...prev, name, price, description: description||name, category, sizes, emoji, images, video };
+        const prevLocal = products[idx];
+        const images = uploadedImg?.secure_url ? [uploadedImg.secure_url] :
+                       (tempImages.length ? [...tempImages] : (prevLocal.images||[]));
+        const video = (tempVideo!==null) ? tempVideo : prevLocal.video;
+        products[idx] = { ...prevLocal, name, price, description: description||name, category, sizes, emoji, images, video };
         showNotification(`✏️ Produto "${name}" atualizado (local).`);
       }else{
-        const images = uploaded?.secure_url ? [uploaded.secure_url] : [...tempImages];
+        const images = uploadedImg?.secure_url ? [uploadedImg.secure_url] : [...tempImages];
         const newProduct = { id: Date.now(), name, price, description: description||name, category, sizes, emoji, images, video: tempVideo };
         products.push(newProduct);
         showNotification(`✅ Produto "${name}" adicionado (local).`);
