@@ -9,7 +9,11 @@ const CHECKOUT_INFO_KEY = 'pp_checkout_info_v1';
 
 
 // === API (lê do config.js) ===
-const API_URL = window.__CONFIG__?.API_URL || 'http://localhost:8000'; // ✅ usa sempre API_URL
+// usa a URL do config.js; se não existir, cai para http://localhost:8000/api
+const API_URL = (window.__CONFIG__?.API_URL
+  ? String(window.__CONFIG__.API_URL).replace(/\/+$/, '')
+  : 'http://localhost:8000/api');
+
 
 const NOIMG = "data:image/svg+xml;utf8," + encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200'><defs><linearGradient id='g' x1='0' x2='1'><stop offset='0' stop-color='#ddd'/><stop offset='1' stop-color='#bbb'/></linearGradient></defs><rect width='300' height='200' fill='url(#g)'/><g fill='#888' font-family='Arial' font-size='16'><text x='150' y='100' text-anchor='middle'>Imagem indisponível</text></g></svg>`);
 
