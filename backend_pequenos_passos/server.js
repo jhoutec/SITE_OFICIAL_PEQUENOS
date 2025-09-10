@@ -1,159 +1,122 @@
-// server.js
-import dns from 'node:dns';
-dns.setDefaultResultOrder('ipv4first');
+// server.js (ESM)
+// Requisitos: "type": "module" no package.json
 
-import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import morgan from 'morgan';
 
-import { pool, migrate } from './db.js';
-
-// Rotas exportadas como ESM default ou module.exports
-import * as authRoutesRaw from './routes/auth.js';
-import * as productRoutesRaw from './routes/products.js';
-import * as orderRoutesRaw from './routes/orders.js';
-import * as uploadsRoutesRaw from './routes/uploads.js';
-const asRouter = (m) => m.default || m;
-
-dotenv.config();
+import { pool } from './db.js';                 // cria Pool do pg com SSL
+import productsRouter from './routes/products.js';
+import ordersRouter from './routes/orders.js';
+import { runMigrations } from './migrations/init.js';
 
 const app = express();
+
+// ===== Config / Environment =====
 const PORT = process.env.PORT || 8000;
-const HOST = process.env.HOST || '0.0.0.0';
+// Pode definir uma ou mais origens separadas por vírgula
+// Ex.: ORIGIN="https://meusite.com,https://admin.meusite.com"
+const ORIGIN = (process.env.ORIGIN || '*').trim();
 
-// --------- Segurança / utilidades ---------
+// ===== Middlewares básicos =====
 app.set('trust proxy', true);
-app.use(
-  helmet({
-    crossOriginResourcePolicy: false, // permite imagens/vídeos externos
-  })
-);
-app.use(express.json({ limit: '5mb' }));
-app.use(morgan('tiny'));
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+}));
+app.use(compression());
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-// --------- CORS ---------
-const allowed = (process.env.CORS_ORIGINS || '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
-
-app.use(
-  cors({
+// ===== CORS =====
+let corsOptions = {};
+if (ORIGIN === '*') {
+  corsOptions = { origin: true, credentials: true };
+} else {
+  const origins = ORIGIN.split(',').map(s => s.trim()).filter(Boolean);
+  corsOptions = {
     origin(origin, cb) {
-      if (!origin || allowed.length === 0) return cb(null, true);
-      if (allowed.includes(origin)) return cb(null, true);
-      return cb(new Error('CORS bloqueado: ' + origin));
+      // Permite ferramentas sem origin (curl, health-check) e as origens configuradas
+      if (!origin || origins.includes(origin)) return cb(null, true);
+      return cb(new Error(`CORS bloqueado para origem: ${origin}`));
     },
     credentials: true,
-  })
-);
+  };
+}
+app.use(cors(corsOptions));
 
-// --------- Health / root ---------
-app.get('/', (_req, res) =>
-  res.json({ ok: true, service: 'pequenos-passos-backend', ts: Date.now() })
-);
-app.get('/health', (_req, res) =>
-  res.json({ ok: true, uptime: process.uptime() })
-);
-app.get('/api/health', (_req, res) =>
-  res.json({ ok: true, uptime: process.uptime() })
-);
+// ===== Logs =====
+app.use(morgan('combined'));
 
-// --------- Rotas ---------
-const authRoutes = asRouter(authRoutesRaw);
-const productRoutes = asRouter(productRoutesRaw);
-const orderRoutes = asRouter(orderRoutesRaw);
-const uploadsRoutes = asRouter(uploadsRoutesRaw);
-
-// sem /api
-app.use('/uploads', uploadsRoutes);
-app.use('/auth', authRoutes);
-app.use('/products', productRoutes);
-app.use('/orders', orderRoutes);
-
-// com /api (compat front)
-app.use('/api/uploads', uploadsRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/products', productRoutes);
-app.use('/api/orders', orderRoutes);
-
-// --------- 404 ---------
-app.use((req, res, next) => {
-  if (req.path === '/' || req.path.startsWith('/api/health')) return next();
-  return res.status(404).json({ message: 'Rota não encontrada' });
-});
-
-// --------- Handler de erros ---------
-app.use((err, _req, res, _next) => {
-  console.error(err);
-  const msg = err?.message || 'Internal error';
-  if (msg.startsWith('CORS bloqueado')) {
-    return res.status(403).json({ message: msg });
-  }
-  res.status(500).json({ message: msg });
-});
-
-// --------- Inicialização do DB (não bloqueante) ---------
-async function initDatabase() {
+// ===== Healthcheck rápido =====
+app.get('/api/health', async (req, res) => {
+  // tenta pingar DB sem derrubar caso falhe
+  let db = false;
   try {
-    // teste rápido de conexão
-    await pool.query('select 1');
-    console.log('✅ Conectado ao Postgres');
+    await pool.query('SELECT 1');
+    db = true;
+  } catch (_) { /* mantém db=false */ }
 
-    // migração em background
-    await migrate();
+  res.json({
+    ok: true,
+    uptime: process.uptime(),
+    db,
+    ts: new Date().toISOString(),
+  });
+});
 
-    // cria admin padrão se não existir
-    if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
-      const { rows } = await pool.query('select id from users where email=$1', [
-        process.env.ADMIN_EMAIL,
-      ]);
-      if (!rows[0]) {
-        const bcrypt = (await import('bcryptjs')).default;
-        const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD, 10);
-        await pool.query(
-          'insert into users (name, email, password_hash, role) values ($1,$2,$3,$4)',
-          [
-            process.env.ADMIN_NAME || 'Admin',
-            process.env.ADMIN_EMAIL,
-            hash,
-            'admin',
-          ]
-        );
-        console.log('✅ Admin criado:', process.env.ADMIN_EMAIL);
-      }
-    }
+// ===== Rotas da API =====
+app.use('/api/products', productsRouter);
+app.use('/api/orders', ordersRouter);
+
+// Raiz opcional (útil pra ver no Render que está vivo)
+app.get('/', (req, res) => {
+  res
+    .status(200)
+    .set('Content-Type', 'text/html; charset=utf-8')
+    .send(`<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<title>Pequenos Passos API</title></head>
+<body style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu; padding:24px">
+  <h1>🚀 API Pequenos Passos</h1>
+  <p>Veja <code>/api/health</code>, <code>/api/products</code> e <code>/api/orders</code>.</p>
+</body></html>`);
+});
+
+// 404 (após rotas)
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// Handler de erro (não deixa processo cair)
+app.use((err, req, res, _next) => {
+  console.error('❌ Unhandled error:', err?.message || err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// ===== Subida + Migrações =====
+async function bootstrap() {
+  // Tenta rodar migrações, mas não derruba o app se falhar
+  try {
+    await runMigrations();
+    console.log('✅ Migrações OK');
   } catch (e) {
-    // NÃO derruba o processo: mantém /api/health online
-    console.error('❌ Falha ao inicializar banco/migrações:', e.message);
-    console.error(
-      'Verifique DATABASE_URL/SSL no Render. O app continua servindo /api/health.'
-    );
+    console.error('❌ Falha ao inicializar banco/migrações:\n', e?.message || e);
+    console.error('Verifique DATABASE_URL/SSL. O app continua servindo /api/health.');
   }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 API rodando em http://0.0.0.0:${PORT}`);
+  });
 }
 
-// --------- Start do servidor ---------
-const server = app.listen(PORT, HOST, () => {
-  const hostToShow =
-    HOST === '0.0.0.0' ? (process.env.PUBLIC_IP || '127.0.0.1') : HOST;
-  console.log(`🚀 API rodando em http://${hostToShow}:${PORT}`);
-  // dispara init do banco sem bloquear o boot
-  initDatabase();
+// Para garantir que rejeições não derrubem:
+process.on('unhandledRejection', (reason) => {
+  console.error('⚠️  UnhandledRejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('⚠️  UncaughtException:', err);
 });
 
-// --------- Shutdown limpo ---------
-const shutdown = async (signal) => {
-  try {
-    console.log(`\n${signal} recebido. Encerrando...`);
-    server.close(() => {
-      console.log('HTTP fechado.');
-    });
-    await pool.end().catch(() => {});
-  } finally {
-    process.exit(0);
-  }
-};
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
+bootstrap();
