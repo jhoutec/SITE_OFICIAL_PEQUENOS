@@ -10,7 +10,7 @@ import morgan from 'morgan';
 import { pool } from './db.js';                 // cria Pool do pg com SSL
 import productsRouter from './routes/products.js';
 import ordersRouter from './routes/orders.js';
-import { runMigrations } from './migrations/init.js';
+import { runMigrations } from './scripts/runMigrations.mjs';
 
 const app = express();
 
