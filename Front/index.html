@@ -8,8 +8,8 @@
   <!-- Libs externas -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Fredoka+One:wght@400&family=Nunito:wght@300;400;600;700;800&display=swap" rel="stylesheet">
-<link rel="preconnect" href="https://res.cloudinary.com" crossorigin>
-<link rel="preconnect" href="https://api.cloudinary.com" crossorigin>
+  <link rel="preconnect" href="https://res.cloudinary.com" crossorigin>
+  <link rel="preconnect" href="https://api.cloudinary.com" crossorigin>
 
   <!-- Seu CSS -->
   <link rel="stylesheet" href="styles.css">
@@ -17,7 +17,8 @@
 <body>
   <header>
     <nav class="container">
-      <div class="logo" id="pp-logo" title="Pequenos Passos">Pequenos Passos</div>
+      <!-- acrescentado data-admin-trigger para os atalhos secretos -->
+      <div class="logo" id="pp-logo" data-admin-trigger title="Pequenos Passos">Pequenos Passos</div>
 
       <div class="search-bar">
         <input type="search" id="search-input" placeholder="Buscar produtos..." oninput="filterProducts()">
@@ -229,6 +230,18 @@
       </div>
     </section>
 
+    <!-- Seção de Contato (necessária para showContact e para o app.js atualizar o link) -->
+    <section id="contact-section" class="contact-section" style="display:none">
+      <h2 class="section-title">Fale Conosco</h2>
+      <p style="margin-bottom:10px;color:#555">Tem dúvidas? Chame no WhatsApp 😊</p>
+      <p>
+        <!-- o app.js sobrescreve este href com window.__CONFIG__.WHATSAPP se existir -->
+        <a id="contact-whatsapp" class="btn" href="https://wa.me/5538992076130" target="_blank" rel="noopener">
+          <i class="fab fa-whatsapp"></i> Conversar no WhatsApp
+        </a>
+      </p>
+    </section>
+
     <!-- Carrinho inicia oculto para evitar flash -->
     <section id="cart-section" class="cart-section" style="display:none">
       <h2 class="section-title" style="margin-bottom:6px">Seu Carrinho</h2>
@@ -354,7 +367,7 @@
   <!-- Config da API: deve vir antes do app.js -->
   <!-- Exemplo de config.js:
   <script>
-    window.__CONFIG__ = { API_URL: 'http://localhost:8000' };
+    window.__CONFIG__ = { API_URL: 'http://localhost:8000', WHATSAPP: '5538992076130' };
   </script>
   -->
   <script src="config.js" defer></script>
@@ -364,37 +377,169 @@
 
   <!-- Atalhos secretos p/ abrir o Admin sem botão visível -->
   <script>
-    // Observação: showAdmin() já faz o gate.
-    // Se NÃO estiver logado, ele mostra a tela de login (#login-section).
-    // Se estiver logado, mostra o painel (#admin-section).
+    // Função de fallback caso showAdmin não exista
+    function fallbackShowAdmin() {
+      const sections = ['home-section', 'products-section', 'cart-section', 'contact-section'];
+      sections.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+      
+      const loginSection = document.getElementById('login-section');
+      if (loginSection) {
+        loginSection.style.display = 'block';
+      }
+    }
 
-    // 1) 10 cliques rápidos na logo
-    document.addEventListener('DOMContentLoaded', () => {
+    // Função que tenta executar showAdmin com fallback
+    function tryShowAdmin() {
+      if (typeof showAdmin === 'function') {
+        showAdmin();
+      } else {
+        fallbackShowAdmin();
+      }
+    }
+
+    // Configuração dos atalhos
+    let adminReady = false;
+    
+    function setupAdminShortcuts() {
+      if (adminReady) return;
+      adminReady = true;
+      
+      // 1) 10 cliques rápidos na logo
       const logo = document.getElementById('pp-logo');
-      if (!logo) return;
+      if (logo) {
+        let clicks = 0;
+        let timer = null;
+        const threshold = 10;
+        const windowMs = 1200;
 
-      let clicks = 0;
-      let timer = null;
-      const threshold = 10;       // <-- mais seguro: 10 cliques
-      const windowMs  = 1200;     // janela de tempo para considerar "rápidos"
+        logo.addEventListener('click', function(e) {
+          clicks++;
+          clearTimeout(timer);
+          timer = setTimeout(function() { clicks = 0; }, windowMs);
+          
+          if (clicks >= threshold) {
+            clicks = 0;
+            tryShowAdmin();
+          }
+        });
+      }
 
-      logo.addEventListener('click', () => {
-        clicks++;
-        clearTimeout(timer);
-        timer = setTimeout(() => { clicks = 0; }, windowMs);
-        if (clicks >= threshold) {
-          clicks = 0;
-          try { showAdmin(); } catch {}
+      // 2) Ctrl + Alt + A
+      document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.altKey && (e.key === 'a' || e.key === 'A')) {
+          e.preventDefault();
+          tryShowAdmin();
         }
       });
-    });
+    }
 
-    // 2) Ctrl + Alt + A
-    window.addEventListener('keydown', (e) => {
-      if (e.ctrlKey && e.altKey && (e.key === 'a' || e.key === 'A')) {
-        e.preventDefault();
-        try { showAdmin(); } catch {}
-      }
+    // Configuração em múltiplos momentos
+    document.addEventListener('DOMContentLoaded', setupAdminShortcuts);
+    window.addEventListener('load', setupAdminShortcuts);
+    setTimeout(setupAdminShortcuts, 1000);
+
+    // Funções básicas caso o app.js não carregue
+    window.addEventListener('load', function() {
+      // Aguarda um pouco para dar tempo do app.js carregar
+      setTimeout(function() {
+        if (typeof showHome !== 'function') {
+          // Define funções básicas de navegação
+          window.showHome = function() {
+            const sections = ['products-section', 'cart-section', 'contact-section', 'login-section', 'admin-section'];
+            sections.forEach(id => {
+              const el = document.getElementById(id);
+              if (el) el.style.display = 'none';
+            });
+            const home = document.getElementById('home-section');
+            if (home) home.style.display = 'block';
+          };
+
+          window.showProducts = function() {
+            const sections = ['home-section', 'cart-section', 'contact-section', 'login-section', 'admin-section'];
+            sections.forEach(id => {
+              const el = document.getElementById(id);
+              if (el) el.style.display = 'none';
+            });
+            const products = document.getElementById('products-section');
+            const filters = document.getElementById('filters-section');
+            if (products) products.style.display = 'block';
+            if (filters) filters.style.display = 'block';
+          };
+
+          window.showCart = function() {
+            const sections = ['home-section', 'products-section', 'contact-section', 'login-section', 'admin-section'];
+            sections.forEach(id => {
+              const el = document.getElementById(id);
+              if (el) el.style.display = 'none';
+            });
+            const cart = document.getElementById('cart-section');
+            const filters = document.getElementById('filters-section');
+            if (cart) cart.style.display = 'block';
+            if (filters) filters.style.display = 'none';
+          };
+
+          window.showContact = function() {
+            const sections = ['home-section', 'products-section', 'cart-section', 'login-section', 'admin-section'];
+            sections.forEach(id => {
+              const el = document.getElementById(id);
+              if (el) el.style.display = 'none';
+            });
+            const contact = document.getElementById('contact-section');
+            const filters = document.getElementById('filters-section');
+            if (contact) contact.style.display = 'block';
+            if (filters) filters.style.display = 'none';
+          };
+
+          window.showAdmin = function() {
+            const sections = ['home-section', 'products-section', 'cart-section', 'contact-section'];
+            sections.forEach(id => {
+              const el = document.getElementById(id);
+              if (el) el.style.display = 'none';
+            });
+            const filters = document.getElementById('filters-section');
+            if (filters) filters.style.display = 'none';
+            
+            // Mostra login se não estiver "logado"
+            const isLoggedIn = sessionStorage.getItem('adminLoggedIn') === 'true';
+            if (!isLoggedIn) {
+              const login = document.getElementById('login-section');
+              if (login) login.style.display = 'block';
+            } else {
+              const admin = document.getElementById('admin-section');
+              if (admin) admin.style.display = 'block';
+            }
+          };
+
+          // Configura o formulário de login básico
+          const loginForm = document.getElementById('login-form');
+          if (loginForm) {
+            loginForm.addEventListener('submit', function(e) {
+              e.preventDefault();
+              const username = document.getElementById('username').value;
+              const password = document.getElementById('password').value;
+              
+              // Login simples (você pode mudar as credenciais)
+              if (username === 'admin' && password === '123456') {
+                sessionStorage.setItem('adminLoggedIn', 'true');
+                document.getElementById('login-section').style.display = 'none';
+                document.getElementById('admin-section').style.display = 'block';
+              } else {
+                const error = document.getElementById('login-error');
+                if (error) error.textContent = 'Usuário ou senha incorretos';
+              }
+            });
+          }
+
+          // Função de logout
+          window.logout = function() {
+            sessionStorage.removeItem('adminLoggedIn');
+            showHome();
+          };
+        }
+      }, 500);
     });
   </script>
 </body>
